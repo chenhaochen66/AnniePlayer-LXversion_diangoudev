@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('mine', {
   playlistReorderList: (ids) => ipcRenderer.invoke('lib:playlist:reorderList', ids),
   // V4.3.5：在线歌单（流媒体收藏）
   splList: () => ipcRenderer.invoke('spl:list'),
+  splRefreshQuality: (id) => ipcRenderer.invoke('spl:refreshQuality', id),
   splCreate: (name) => ipcRenderer.invoke('spl:create', name),
   splRename: (id, name) => ipcRenderer.invoke('spl:rename', id, name),
   splDelete: (id) => ipcRenderer.invoke('spl:delete', id),
@@ -201,6 +202,7 @@ contextBridge.exposeInMainWorld('mine', {
   dlClear: (statuses) => ipcRenderer.invoke('dl:clear', statuses),
   dlRetryAll: () => ipcRenderer.invoke('dl:retryAll'),
   dlOpenFolder: (id) => ipcRenderer.invoke('dl:openFolder', id),
+  dlOpenRoot: () => ipcRenderer.invoke('dl:openRoot'), // V4.6.4：打开下载根目录
   dlGetSettings: () => ipcRenderer.invoke('dl:settings:get'),
   dlSetSettings: (patch) => ipcRenderer.invoke('dl:settings:set', patch),
   onDlEvent: (cb) => { const h = (_e, ev) => cb(ev); ipcRenderer.on('dl:event', h); return () => ipcRenderer.removeListener('dl:event', h); },

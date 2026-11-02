@@ -124,6 +124,18 @@
 - **双重校验**（lxsdk.js:294-304）：① 身份校验 `verifyUrlIdentity`（tx 按 URL 里的 songmid 比对，防聚合音源按歌名搜索张冠李戴）；② 格式校验 `verifyUrlFormat`（请求无损却返回 m4a/mp3 判该档失败，**身份对但格式不对时 break 直接落下一档**，不再试其他音源）。降级后徽标显示实际档位+真实容器（如「安妮音源·极高 320k · M4A」），状态栏附降级提示。
 - ✅已验证（2026-10-21 实测）：玉宁熙 tx 后端对 type 参数不敏感，128k/320k/flac/flac24bit 全返回同一 C400 .m4a（AAC 320k）→ **tx 链要无损必被格式校验打回降级**；vkeys 免费层全档位只给 RS02 试听流；真 FLAC 走 wy 链（笒鬼鬼 / GD Studio br=999）。
 - ✅已验证（2026-10-21）：**tx 真无损唯一通道 = 长青SVIP中继**（`http://175.27.166.236/kgqq1/qq.php?type=mp3&id={songmid}&level=standard|exhigh|lossless`，提取自长青SVIP音源 v1.2.0，服务端 VIP 凭证池，302 到酷我 CDN；lossless 实测 41MB fLaC 头真无损）。已接入 V6（TX_SVIP_RELAY）：无损档排最前（玉宁熙假成功会截胡），有损档排玉宁熙后。中继 URL 无扩展名 → verifyUrlFormat 走 HEAD 探测 Content-Type 放行；身份校验 txUrlMid 不匹配代理 URL 自动放行。**注意：第三方公众号运营服务，随时可能停用**；玉宁熙官方支持用户自填免费 key（api-v2.yuafeng.cn 注册）解决「音质对不上」，未接入（待需求）。
+- ✅已验证（2026-10-29，普通版 v7max + QQ「晴天」0039MnYb0qxYhV 实测）：`musicserver.haitangw.cc resolve-url level=hires` 连续 5 次在 `RS01+正确media_mid` 与 `F000+其他media_mid` 间波动；RS01 地址 GET Range 立即 404，F000 是错歌；同曲 `lossless` 返回正确 F000（206/fLaC），`exhigh` 返回正确 M800（206/ID3）。故「QQ Hi-Res 不稳定/无法解锁」首先是**上游 tx hires 通道无效且不稳定**，并非用户设置；普通 FLAC/320k 通道正常。
+- ✅已验证（2026-10-29）：普通版 v7max 还有三处放大问题：① `CACHE_TTL=6h` 缓存完整签名 URL，安妮 401/403/410 刷新会重新拿到同一缓存地址；② 脚本内 `FALLBACK flac24bit→flac→320k→128k` 与安妮 `lockType` 冲突，且把降级结果按原始高档 key 缓存 6h；③ 仅按 `.flac` 扩展名不能证明真 24bit（RS01 因立即 404 未能验证位深，不应直接认定为 16bit）。另 QQ 免签搜索常无 `size_hires`，下载弹窗按 meta.types 出档时部分歌本就不会显示 Hi-Res。
+- ✅已验证（2026-10-29，安妮独家音源 v5）：其 QQ `flac24bit/hires` 虽都映射 `level=lossless`（v5.js:18-24），但 F000 并不等于 16bit——ffprobe 实测「晴天」24bit/44.1kHz、「最伟大的作品」「如愿」「愿与愁」均 24bit/48kHz，且歌曲身份正确。故 v5 的 `lossless` 通道当前能拿到真 24bit，且避开 v7max 使用的故障 `hires/RS01` 通道；但不保证每首都有 24bit，也不代表 96/192kHz。
+- ✅已验证（2026-10-29）：普通版源码 `source_work/章鱼音源-普通版-v6.js` 的 QQ 首选后端 `flac24bit` 已照 v5 改为 `lossless`，重新混淆产物版本 `7.0.1-max`；实测请求 body 从 `level=hires` 变为 `level=lossless`，返回正确 F000。特供版也已同步 `flac24bit/hires→lossless` 并生成 `7.0.1-max`。**曾尝试在 am-stream.js 用「tx 有 flac 即显示 flac24bit」补 size_hires 缺字段，导致所有 QQ FLAC 误标 Hi-Res，已当日撤回**；正确做法必须按实际位深探测/缓存，不能由容器格式推断 24bit。
+- ✅已验证（2026-10-29）：安妮 v6 的长青 SVIP 中继当前对「晴天」返回 `F000000bYDlc2XxKLs`（期望 mediaMid `003Qui1q2u1Zho`），属于错歌。用户随后明确要求完整照搬安妮 V6+V5，不做自行裁剪：普通版/特供版 `7.0.2-max` 均已把 `TX_SVIP_RELAY` 本体置于 QQ 无损档首选、海棠 lossless 置兜底；实测普通版 flac24bit 首请求确为中继并返回其 302 CDN 地址。此实现与 V6 一样依赖中继当前返回质量，错歌/失效属于上游现状。
+- ✅已修正（2026-10-30，推翻此前“官方无 size_hires 也可开放 Hi-Res 尝试”的下载策略）：V6/V5 返回 24bit F000 只能证明第三方流是 24bit 容器，不能证明 QQ 官方提供 Hi-Res。批量核对《唯一》《恋人》《天下》等截图 10 首，官方 `size_hires` 全为 0，但 `hasDlQuality()` 的「tx 有 flac 即开放 flac24bit」兜底把任务统一按 Hi-Res 请求，部分音源随后返回 24bit/44.1 或 24bit/48 文件。现该兜底已删除：下载严格按官方详情补全后的 `types` 出档/批量选档；详情无 Hi-Res 或查询失败均保守不开放。在线播放的引擎实测格式回显不受影响。
+- ✅已修复（2026-10-29）：在线播放截图一直只显示 FLAC 的根因是 `am-render.js` 旧逻辑只对本地曲消费引擎 `format` 事件，流媒体徽标只看搜索元数据；主进程 `qualityCandidates()` 实际始终先请求所选档。现流媒体也消费引擎真实 `codec/bitDepth/requestedRate`，`AM.updateStreamActualQuality()` 把当前行徽标更新为实测 Hi-Res/FLAC，播放器/OSD 显示真实位深采样率，不再猜 QQ 的 size_hires。
+- ✅已修复并实测（2026-10-29）：下载真实格式链为 `analyzer.probeCodec`（FLAC 必须读 `bits_per_raw_sample`，再回退 `bits_per_sample`）→ `streaming.probeDownloadedFile/download` → dlManager 任务 `actualCodec/actualBitDepth/actualSampleRate/actualQuality` 持久化与 `dl:event` → am-download/am-stream 徽标。仅位深≥24bit（或 DSD 1bit）/采样率>48kHz 的无损才标 Hi-Res；普通 16bit FLAC 不升级。同名跳过也探测成品；旧已完成任务由 dlManager 启动时逐个后台回填，无需重下。「加州旅馆」本地文件经新 probeCodec 实测返回 `flac/24bit/96000Hz`；check-syntax 173 文件 0 失败。
+- ✅已修复并实测（2026-10-29）：QQ 老搜索接口漏 `size_hires` 导致列表仍 FLAC、下载弹窗 Hi-Res 无大小。`lxsdk.js txBatchFileDetails()` 现把整页 songmid 放进同一个 musicu 请求（`req_0/req_1...` 已验证可批量），按 songmid 回填真实 `size_hires`；`hiresDetailLoaded=true` 且详情无 Hi-Res 时禁用 tx 空白 Hi-Res 尝试档。实测「加州旅馆」搜索首曲 `flac24bit=138.08MB`（144792304 字节，详情 24bit/96000Hz），同页其余普通 FLAC 未误加 Hi-Res。
+- ✅已扩展并实测（2026-10-29）：Hi-Res 详情补全不只搜索，`enrichTxInfos()` 已统一接入 QQ 歌单详情、专辑曲目、排行榜（每 50 首一批）；只改 `types/_types/hiresDetailLoaded`，无 `size_hires` 仍不标。截图精确专辑实测：孙露《把悲伤留给自己》（谁为我停留，songmid `001YifCl2Lc5k2`）返回 Hi-Res 105.21MB；苏芮《酒干倘卖无》（酒干倘卖无 / 优柔的执着，songmid `00137sIZ4gDhhI`）返回 96.17MB。顺带补上 `albumSongs` 漏出的 module.exports（streaming/index.js 原本就调用它）。
+- ✅已扩展并实测（2026-10-30）：自制在线歌单保存的是收藏时快照，不在搜索/平台歌单详情补全链内，旧快照会出现「有 Hi-Res 档但无大小」。新增 `lxsdk.enrichSavedSongs()` + `spl:refreshQuality` IPC；AM 打开自制歌单时对旧 QQ 曲目后台批量刷新并持久化，其他平台不动，每歌单每启动最多一次防重绘循环。精确版本《secret base～君がくれたもの～ (10 years after Ver.)》songmid `002tfbql3DrAe8` 从仅 FLAC 76.99MB 的旧快照恢复为官方 Hi-Res 133.11MB；《唯一》仍无 Hi-Res。check-syntax 173 文件 0 失败。
+- ✅已定位并修复（2026-10-30，对照洛雪 `ad95d509`）：洛雪 `tx/musicInfo.js` 的可靠 Hi-Res 来源是 `music.pf_song_detail_svr/get_song_detail_yqq`；DownloadModal 直接消费 qualitys，并无额外隐藏档位。安妮自加的批量详情此前每 50 首一个 musicu 请求，QQ 实测整批 `code=500000`，导致歌单 9799401176 的《secret base》songmid `002tfbql3DrAe8` 仍只有 FLAC。改为每 20 首一批后，239/239 首详情成功，11 首识别 Hi-Res，目标曲为 133.11MB；旧/新 qzone/aiDissInfo 歌单接口本身均返回 size_hires=0，不能替代单曲详情。
 
 ### 数据结构
 - **在线歌单** `splList()` → `[{id, name, items:[{song, addedAt}]}]`（main.js:1038 `spl:list` 返回 `loadStore().streamPlaylists`；AM 消费处 am-stream.js:146 `currentSpl().items.map(x=>x.song)`）。
@@ -155,9 +167,11 @@
 - **连播**：am-qobuz.js `playTrack(t, album, queue, index)` 建立 `QZ.playQueue[{t,album}]/playIndex`（专辑/歌单/搜索列表整表即队列）；`patchQobuzTransport()` 首次播放时包装 `annieStream.playNext/playPrev` + `AM.nextStream/prevStream`，守卫 `currentStream.provider==='Qobuz' && currentStream.qid===队列当前项 id`（payload 带 `qid`），联动全局播放模式（repeat-one/list-rand 同洛雪语义），播完队列自然停止。历史根因：此前 Qobuz 单曲直连无队列，ended 后三层 playNext 包装守卫全落空。
 - **下载 M3（标签/封面/歌词）**：qobuz/download.js `runQueue(..., post)` 后处理钩子（**done 与 skip 都跑**——skip 补历史无标签文件，幂等）；index.js `makePostProcessor(fill)`：歌词（lyricMatch 阈值 80 落盘宁缺毋滥）→ `tagWriter.writeTags`（标题/艺人/专辑/专辑艺术家/曲目号/碟号/日期+封面 coverUrl+嵌入歌词）→ 旁挂 .lrc；fill 计数随 end 事件 → am-qobuz.js 汇总文案 + **歌词未匹配每批一次 proToast**（不逐曲弹）。coverUrl 由渲染层下载项/主进程 resolveToTracks 双向附着。
 - **健壮性**：download.js `checkAudioMagic` 落盘前校验 fLaC/ID3 魔数（防 403 错误页存成假 FLAC，noRetry 直接失败）；原有 .part 断点续传 + 3 次指数退避（重试现签新 URL）保留。
+- **封面诊断盲区（2026-10-31 ✅代码核实）**：Qobuz 只嵌封面、旁挂歌词，不调用 `writeCoverFile`，故无 cover.jpg 是设计如此。`tagWriter.fetchCoverBytes` 失败静默返回 null（tagWriter.js:52-72），`writeTags` 仍可 `ok:true, cover:false`；Qobuz fill 只统计 tagged/tagFail，没有 cover/coverMiss，且 console.warn 的 `[qobuz-dl]` 不进入当前诊断包（main.js:1649-1666），所以仅凭“标签成功”或空错误日志不能证明封面已写入。✅代理根因已实锤并修复（V4.6.8 待发版）：Node 全局 fetch 请求 Qobuz 直连 ConnectTimeout；tagWriter 新增可选 httpFetch，Qobuz post 注入 qzFetch/net.fetch（tagWriter.js:52-67、101；qobuz/index.js:323-324），其他平台仍走原通道。真实 Clara Sverner 专辑 + 用户无封面 FLAC 临时副本 A/B：修复前 `tagged:true, cover:false`，修复后 `cover:true`，ffprobe 检出 `mjpeg / attached_pic=1`；未改用户原文件。注意：DIIV/Chloe 文件里的封面后被用户确认是 Mp3tag 手工补的，不能当作自动嵌图成功证据。
 - **歌词链**：index.js `lyricMatch(p, minScore)` 模块级函数——**LRCLIB 优先**（extMeta.lrclibGet：/api/get 四参精确 → search 兜底时长 ±3s 采信）→ 落空走 LX 五源打分（播放 60 / 落盘 80）。播放时兜底（fetchLyric，am-qobuz.js）与下载落盘共用。
 - **标签字段补全（V4.4.3 第二轮）**：makePostProcessor 增 genre/composer/publisher（Qobuz 专辑级 `genre.name`/`label.name`，曲目级 `composer.name`）；渲染层「下载全部」附着 genre/publisher/releaseDate；resolveToTracks 专辑分支同步附着。UPC/ISRC/版权 tagWriter 无对应字段，未写。
 - **网络流切歌爆音修复（V4.4.3，引擎侧）**：`Engine.Playback.cs PlayCrossfade` 在 `mixer.FadeTo` 前对 URL 源补预缓冲（≥0.5s，同 quickStart URL 下限，8s 上限 + gen 代际守卫）。根因：crossfade 路径此前无预缓冲（PrebufferAndStart 只服务普通 Play），新源空缓冲被设备回调立刻消费 → 静音↔波形硬切换 = 碎裂爆音；本地文件即时解码无感，Qobuz 高码率 FLAC 最明显。等待期间旧源继续播放，听感无缝。
+- **主进程系统代理审计与修复（2026-10-31 ✅）**：三组高优先级境外裸 Node 路径均已修：① `onlineMatch.js` MusicBrainz/CAA 封面抓取及 writeTags 回退现传惰性 net.fetch（国内五源仍走原通道）；② 通用 `stream:coverProxy` 改 Electron net.fetch，覆盖 Qobuz/Apple 播放封面；③ Apple `register()` 在 IPC 开放前注入本地 wrapper + amFetch，消除 status/ensure 冷路径竞态。次级风险仍未施工：sources.js 在线音源 URL 导入裸 http/https.get；lx-http.js 第三方音源任意 URL、lxsdk.js 动态 URL HEAD、通用流媒体下载均不随代理（国内内置平台直连可接受，境外自定义 URL 高风险）。已安全：GitHub 更新、Qobuz API/音频/下载封面、extMeta 元数据、streamCache 边播边存；amWrapper 127.0.0.1 与 remote.js 本地服务不属于代理问题。
 
 ### 国际元数据源（V4.4.3，`annie/main/extMeta.js`）✅
 - 纯 Node 模块（规范 12 无顶层 electron）；`setHttpFetch` 注入 net.fetch（qobuz/index.js init 里随 qzFetch 一并注入）；UA 带项目标识。
@@ -239,6 +253,7 @@
 - `streamCache` IPC：lookup/fill/stats/setCfg/pickDir/clear/**groups**。上限 128MB–50GB，设置 UI 暴露 512MB–20GB；超限 LRU 清理，缓存目录可自定义。
 - **V4.4 分组**：fill 写索引条目带 `provider/quality/title/artist`（旧条目无字段，`entryGroup(key,ent)` 兜底——provider 取 key 首段匹配 kg/kw/mg/tx/wy，quality 取尾部匹配 flac24bit/flac/320k/128k，未命中归 other/unknown）；`streamCache:groups` 返回 `[{provider,quality,count,totalMB}]`；`streamCache:clear(filter)` 无参=全清（返回 `{removed}`），带 `{provider}` 和/或 `{quality}`=只删命中组。preload 暴露 `streamCacheGroups()`、`streamCacheClear(filter)`。设置 UI（settings.js 下载 section「播放缓存」）分组卡片 `.set-sc-groups/.set-sc-grow`（app.css）。
 - **命中标识（renderer AM）**：`S.cacheHit`（am-stream.js playStreamAt 调 annieStreamPlay 前置 false、成功回调读 `playTrack.cached`）；`AM.refreshCacheBadge()`（am-render.js）切换主 `.am-badge`/沉浸 `.am-imm-fmt`/迷你 `.am-mini-fmt` 的 `am-fmt-cache` 类（CSS：绿字 #33c98f/#4ad295 + 圆点，am.css `.am-badge` 后），refreshTransport 每次联动（切本地 currentStream=null 即灭灯）；命中时状态栏文案「平台 · 音质 · 本地缓存秒开」。
+- **音质徽标状态隔离（2026-10-30 ✅）**：在线 `am-stream.js` 会把 `S.fmt` 临时写成「音源·音质」，本地统一起播入口 `player.js playAt()` 必须在 `state.currentStream=null` 后同步清空 AM `S.fmt`，否则旧在线文案会残留到本地曲。`am-render.js` 的 `_lastFmt` 只在引擎 `format` 事件更新，不能再由 `refreshBadge()` 缓存任意在线临时文案；引擎事件到达时，本地写真实 `编码·位深·采样率`，在线则保留「音源·音质」、仅用实测参数同步列表（无来源文案才回退实测格式）。
 - 选择集统一存 `S.msSel`（Set<path>，**存 path 不存索引**）；复选框模式 `S.msOn` 仍保留（右键「☑ 多选」进入），两者共用工具条——`renderTrackTable` 里 `S.msOn || S.msSel.size` 即渲染 `renderMsToolbar`。
 - 行点击逻辑在 `buildTrackRow`：非 msOn 模式单击走 `rowSelClick`（Ctrl/Meta 切换、Shift 从 `S._selAnchor` 连选后替换、普通单击清空选择并记锚点；播放仍双击）；msOn 模式修饰键同样走 rowSelClick，普通点击=勾选切换。
 - 框选：R.content 一次性挂 mousedown（`_marqueeBound`），只在表格视图（songs/favorites/albums详情/pl:）+ 空白处启动（排除 `tr.am-tr/thead/.am-view-head/.am-ms-bar/button/input/a` 及滚动条），6px 位移阈值防抢单击；选框 `.am-marquee`（fixed+pointer-events:none，client 坐标）；松手按 `getBoundingClientRect` 相交命中**已渲染行**（窗口化下垫片区命不中——已知限制），Ctrl=追加否则替换。
@@ -334,15 +349,29 @@
 
 ### 🔍 待验证（暂未修，下轮候选）
 - 【功能储备】SMTC ↔ Wallpaper Engine 联动（用户 2026-10-09 提出，先记下来慢慢做）：mediaSession.js 已走 Chromium Media Session → Windows SMTC（曲名/封面/进度/控制，不占音频管线，独占/ASIO 下 WE 也能读到）；待实测：①无 <audio> 发声（C# 引擎出声）时 Chromium 是否真的激活 SMTC（不激活则主进程 WinRT 原生注册兜底）②封面 dataURL 建议压 256×256（WE 官方建议）。WE 频谱类壁纸靠 loopback 抓 PCM，独占下物理无解（FB2K 同），要做得引擎旁路 PCM 给虚拟声卡。
-- 扫描竞态：watchScanPending 与手动扫描互截（main.js:458-497/601-635）；scanWorker cancelled 单标志互踩（scanWorker.js:16,30,120）。
-- app:relaunch 走 app.exit(0)：不触发 before-quit → flushStore/引擎退出等待全跳过，AnnieEngine.exe 孤儿残留（main.js:1500）。
-- 流媒体跨主题续播接管链断档（三层补丁放行落到陈旧 streamState）。
-- theme.js 续播流媒体未传 onPlayed → 无歌词/不预取下一首（streaming.js:381 注入全靠它）。
-- 下载扩展名回退可产非法路径（streaming/index.js:151,161）；引擎崩溃自愈对流媒体用过期 URL 重播（player.js:1380-1393）。
-- 非原子写四处：beat-cache.json / dl-tasks.json / stream-settings.json / stream-sources.json。
-- 设置 setPalette/update 不调 applyPalette/applyAccent（settings.js:2883-2890，命令面板入口）；主题切换 switching 锁依赖 mount 不抛异常（theme.js:143-175）。
-- ~~FB2K 右键菜单无歌单收敛~~ ✅已修：ctxSubMenu 二级浮层（fb2k.js:1456 ctxMenu 支持 {sub,items} 项；本地/流媒体歌单 >8 收敛，子面板挂菜单项内部 fixed 定位 + 翻左避让）；拖拽缺 pointercancel（fb2k.js:1933+/am.js:401+/player.js:1496+）仍待验证。
-- qobuz 读取类端点不校验 HTTP status → token 过期自动重登可能不生效（qobuz/api.js:218-231）。
+- ~~扫描竞态：watchScanPending 与手动扫描互截；scanWorker cancelled 单标志互踩~~ ✅已修（V4.6.4 P0-3）：scanWorker 取消按 jobId 作用域化（cancelJobs Set + globalCancelSeq 代际号，scanWorker.js:16-43）；主线程三处「cancel+scan」连发改为带旧 jobId 的定点取消（main.js:517-522/762-768/779-786），手动扫描/重扫顶替监听扫描时复位 watchScanPending+libWatchRunning。测试 scripts/scan-worker-cancel-test.js 5/5。
+- ~~app:relaunch 走 app.exit(0)：不触发 before-quit~~ ✅已修（V4.6.4 P0-1，main.js:1850-1859）：先同步 flushStore 再 app.quit() 走完整 before-quit 链（等引擎退出后 exit）。
+- ~~流媒体跨主题续播接管链断档~~ 🔍部分缓解（V4.6.4）：theme.js 续播已补 onPlayed（歌词+AM 预取），自然结束连播仍依赖 AM/FB2K 各自队列（legacy streamState 跨主题不重建属设计）。
+- ~~theme.js 续播流媒体未传 onPlayed~~ ✅已修（V4.6.4 P1-4a，theme.js:104-131）：onPlayed 取歌词注入舞台+AM 缓存+广播 annie-stream-lyric + AM.maybePreloadNext；false/异常均 proToast。
+- ~~下载扩展名回退可产非法路径~~ ✅已修（V4.6.4 P1-7，streaming/index.js:186-195）：KNOWN_EXT 白名单 12 种，不匹配回退 mp3。
+- ~~引擎崩溃自愈对流媒体用过期 URL 重播~~ ✅已修（V4.6.4 P1-4b，player.js:1562-1577）：带 song 的洛雪流媒体先 streamSongUrl 重新取址再播+seek 回断点；Qobuz/am 仍原路径。
+- 播放 false 反馈补齐（V4.6.4 P1-4c）：streaming.js:433-435 / am-qobuz.js:137-139 / theme.js——6 个 annieStreamPlay 调用点全部有失败反馈。
+- ~~引擎设备拔出无声假播放~~ ✅已修（V4.6.4 P1-5）：IOutputBackend.ConsumeOutputFault() 默认方法 + WasapiBackend 订阅 PlaybackStopped（_expectStop 区分期望停止）+ Engine TickPosition 轮询发 output-fault 事件。**ASIO 补充**（V4.6.4）：NAudio AsioOut 无 PlaybackStopped，改为播放期 2s 定时探活（ProbeAlive 调驱动 GetSampleRate）；Play 起播 StartAliveWatch，Pause/Stop 置 _expectStop+StopAliveWatch 防误报。**⚠️ 两个血泪教训**（诊断包实锤）：① 探活必须走 **AsioSta.Invoke（STA 线程）**——ASIO COM 驱动在 Timer 线程池线程上直接 `0x80004002 Unable to instantiate ASIO / STAThread is set`；② **ASE_NotPresent ≠ 设备拔出**——独占模式下设备被自己的 `_asio` 实例持有，第二个 COM 句柄查询必报 `ASE_NotPresent`（错误信息含 NotPresent 要 return 忽略，这是「被占用=设备在」的正常信号）。初版两错叠加 → 正常播放被误判拔出、误切系统默认音箱。真拔出靠非 NotPresent 的 HRESULT 异常判定。
+- **设备拔出无感恢复 + 一键续播**（V4.6.4 增强）：根因=output-fault 后 _backend 留死句柄，resume 在死设备上必然失败被 catch 吞掉 = 播放键失效。修复三层：① 引擎 output-fault 时自动 SelectBackend("wasapi",null,exclusive:false) 回退共享默认输出（复用 V3.5.2 设备失效回退），事件带 switchedTo（Engine.Playback.cs:772-787）；② 渲染层 output-fault 存 deviceFaultResume 快照（position/path/stream）+ 弹窗「已切换到 XX，已暂停，点击 ▶ 继续」+ 同步持久化 backend='wasapi' 让设置界面刷新（player.js:1595-1617）；③ 播放键续播。**⚠️ 关键教训**：续播逻辑必须抽成全局 `window.annieDeviceFaultResume()`（player.js:1692-1725）——**AM 主题播放键走 am.js:468 togglePlay（R.btnPlay.onclick），FB2K 走 fb2k.js:1991 transportPlayPause，都不经过 player.js 的 $('#btn-play').onclick**！只改 player.js 在 AM 主题下完全无效。三处播放键（player.js/am.js/fb2k.js）都需先调 `if(window.annieDeviceFaultResume && !state.playing && state.deviceFaultResume){...return}` 接管。续播：洛雪流媒体 streamSongUrl 重新取址→annieStreamPlay→600ms seek 回断点；Qobuz/am 重播原 URL；本地 applyAudioSettings→offset play。
+- ~~ffmpeg stderr 无上限/无超时~~ ✅已修（V4.6.4 P1-6）：Decode.cs 逐行读+8KB 环形；tagWriter 4KB 截断+120s 超时杀树；loudness 16KB 截断+超时杀树；analyzer probeCodec stdout 64KB+stderr 消费+30s 超时。
+- ~~qobuz 读取类端点不校验 HTTP status~~ ✅已修（V4.6.4 P1-8，qobuz/api.js:218-225）：_body() 统一校验 401→AUTH 触发 withAuth 重登，8 个读取端点全切换。
+- 歌单/专辑批量下载自动建子文件夹（V4.6.4 新功能）：渲染层 am-stream.js currentDlGroupDir()（spl: 自制歌单名 / stTab==='lists'+slDetailId 歌单名 / stTab==='albums'+abDetailId 专辑名）→ queueDownloads 附 groupDir → dlManager 任务快照存 groupDir（续传透传）→ streaming/index.js sanitizeGroupDir()（剥分隔符/保留名/限长80）拼 targetDir + mkdir recursive。toast 提示存入的文件夹名。搜索视图/无上下文不建（保持旧行为）。Qobuz/AM 无国内批量下载入口不受影响。**修正**：歌单/专辑分支加了 stTab 页签门槛——此前只看 detailId，切去搜索页时 detailId 未清空导致搜索单曲误存进上一歌单文件夹；自制歌单 spl: 分支不受此影响（S.view 切走即失效）。**修正2**：sanitizeGroupDir 空输入先返回 ''——此前复用 sanitizeFileName('') 回退「未命名」，导致搜索单曲（groupDir=''）被误建「未命名」文件夹；纯非法字符输入回退「未命名」也视为无效不建。
+- 自制在线歌单多选批量下载（V4.6.4，renderSplView 对齐流媒体 renderSongsTable）：头部加「☑多选」「⬇下载全部」按钮；多选工具条（全选/下载选中/退出，S.splSel 歌曲对象引用，与 S.stSel 隔离）；行首复选框 am-ms-ck + toggleSplSel；右键 多选/下载菜单（复用 R.pop）；多选时点击行=切换选中不播放。电狗策略 bestDlType 取各曲最高音质。语法 173 文件 0 失败。
+- 下载情况视图便捷入口（V4.6.4 小而雅）：头部加「📂打开下载目录」（dlManager.openRoot → dl:openRoot IPC → dlOpenRoot，shell.openPath 根目录+mkdir 兜底）；已完成任务若 t.groupDir 非空，openFolder 直接 shell.openPath 歌单子目录（不再定位单文件），按钮 title 显示「打开「歌单名」文件夹」。链路 dlManager.js:202-219 / main.js:2292 / preload.js:204 / am-download.js:85-89,160。
+- ~~非原子写四处：beat-cache.json / dl-tasks.json / stream-settings.json / stream-sources.json~~ ✅已修（V4.6.4 P0-2）：新增纯 Node 模块 `annie/main/jsonFile.js`（writeJsonAtomic/tryWriteJsonAtomic/readJson，tmp+rename，无 electron 依赖符合规范12），五处写盘全部切换（含 streamCache.js saveIdx 顺带）。测试 scripts/json-file-test.js 9/9。注意：streamCache fill 的旧快照覆盖问题（loadIdx→网络等待→saveIdx）未修，留待下轮。
+- ~~设置 setPalette/update 不调 applyPalette/applyAccent~~ ✅已修（V4.6.4 P2-2，settings.js:4220-4234）：setPalette 补 applyPalette，update 按 patch 键补 applyPalette/applyAccent。
+- ~~主题切换 switching 锁依赖 mount 不抛异常~~ ✅已修（V4.6.4 P2-1，theme.js:186-199）：apply 包 try/catch，mount 异常时收过渡屏+解锁+proToast，不再永久锁死。
+- ~~streamCache 索引旧快照覆盖~~ ✅已修（V4.6.4 P2-3，streamCache.js:94-105）：fill 落盘前重新 loadIdx 再 merge 自己的条目，不再用网络等待前的旧快照整体覆盖。
+- ~~amWrapper stop/start 竞态~~ ✅已修（V4.6.4 P2-4，amWrapper.js:114-160）：svcGen 代际号使旧轮询/close 回调失效，close 身份比对防误清新句柄，start 先等端口释放，stop 清 svcStarting。
+- ~~拖拽缺 pointercancel~~ ✅已修（V4.6.4 P2-5）：am.js:530-546（进度）、player.js:1720-1727（粒子进度）、fb2k.js:2110-2125（进度）/2163-2170（音量）/2207-2213（栏宽）全部补 cancel 监听；进度类 cancel 只复位不 seek，栏宽按已拖宽度收尾。
+- ~~DSP NaN 穿透~~ ✅已修（V4.6.4 P2-6）：Eq.cs:48-50（Update 非有限值按 0dB）+ ProcessFrame NaN 隔离清 _z 状态；Peq.cs:17-22（Band 构造非有限回退默认）+ ProcessFrame 同款隔离；Outputs.cs:337-339 limiter 前 NaN 样本置静音。
+- ~~localStorage 裸读~~ ✅已修（V4.6.4 P2-7）：am-stream.js:130-135（AM 音质读取兜底 aac）、am-dom.js:38-43（侧栏/歌词宽度初始化 try/catch）。
+- ~~FB2K 右键菜单无歌单收敛~~ ✅已修：ctxSubMenu 二级浮层（fb2k.js:1456 ctxMenu 支持 {sub,items} 项；本地/流媒体歌单 >8 收敛，子面板挂菜单项内部 fixed 定位 + 翻左避让）。
 
 ---
 
@@ -469,9 +498,12 @@
 - **wrapper-lite 裁剪（671MB→275.6MB）**：可裁＝非 x86 edk2 固件（288MB）、doc/man/icons/locale（33MB）、ANGLE/SwiftShader GPU 库 7 个 dll（44MB，libGLESv2*/libEGL*/libGLESv1_CM/libvk_swiftshader）。**不可裁（qemu exe 加载时依赖，缺了 0xC0000135）**：视频编解码库（libaom/librav1e/libSvtAv1Enc-4/libdav1d-7/libjxl+libjxl_cms）、GTK 簇（libgtk/libgdk/cairo/pango/atk/gdk_pixbuf/harfbuzz/epoxy）、libspice-server、libvirglrenderer。
 - **三大坑（已修）**：
   1. **init 段占位时长（15 秒停播根因）**：Apple init(moov) 的 mvhd 时长是占位值（不同歌恒定 ~14.95s），引擎 `TickPosition` 按 `_track.DurationSec` 判 ended（Engine.Playback.cs:724-732）→ ALAC 流播 ~15 秒就停。修复：downloader.js `patchInitDuration()` 按 playlist EXTINF 总长改写 mvhd/tkhd/mdhd/mehd（v0/v1），seek 时扣除 startOffsetSec。✅ffprobe 实测 14.95→314.25。
-  2. **service.js 先发 200 后失败**：ALAC 分支旧实现 writeHead(200) 在生成器之前，生成器早夭 → 客户端拿 200+空体 → ffprobe 探测失败。修复：首 chunk 到位才发 200，失败回 500 JSON（service.js:91-114）。
+  2. **service.js 先发 200 后失败**：ALAC 分支旧实现 writeHead(200) 在生成器之前，生成器早夭 → 客户端拿 200+空体 → ffprobe 探测失败。修复：首 chunk 到位才发 200，提前失败回 500（service.js:91-131）。
   3. **`play.crossfade → KeyNotFound`**：Decode.cs Probe 旧实现 `root.GetProperty("streams")`，ffprobe 失败（I/O error）输出空 JSON 时抛裸 KeyNotFoundException。修复：Probe 拆 ProbeOnce + URL 一次重试、检查 ExitCode/stderr、TryGetProperty；PlayCrossfade 探测失败回退普通 Play（Engine.Playback.cs:425-431）。另 player.js:1326 AM 流（provider==='am'）直接走普通 play 不走 crossfade。
+- **temari.wasm 路径回退（2026-10-31 ✅已验证）**：dev 曾误选 `node_modules/electron/dist/resources/am/temari.wasm`，ALAC 进度到 `key` 后因 ENOENT 返回 500；`wasmPath()` 现仅在打包资源真实存在时采用它，否则回退模块同目录（streaming/am/index.js:20-30）。同曲实测 ALAC/AAC 均 HTTP 200 且首 chunk 非空。
+- **歌词/错误正文/状态提示小修（2026-10-31 ✅回归通过）**：`fetchLyricsSplit()` 可返回 null，`am:lyric` 现回退空三轨，不再抛 reading 'lyric'；ALAC 首 chunk 前异常时 500 返回 `{error}` JSON（service.js:123-132），不再是空 body；wrapper HTTP 正常但 `regions:[]` 时，设置页与 Apple Music 页明确提示「未登录或实例异常」并建议停止后重启，不再只显示已连接。
 - **播放/下载音质**：播放 aac（缓冲式全量下载+Range）/ alac（流式 P2），本机键 `annieplayer.am.playq`；下载 aac/aac128/he-aac/alac/atmos，键 `annieplayer.am.dlq`（am-amusic.js:13-32）。
+- **下载健壮性审计（2026-10-31 ✅只读；用户拍板继续实验性、暂不施工）**：核心 wrapper /m3u8、/key 有 120s 超时+3 次退避重试，歌词失败可降级；但 AM 提前分流，无通用 .part/Range 续传及 401/403/410/416 恢复，CDN playlist/init/分片无超时重试（downloader.js:773-807）；dlManager AbortSignal 在 streaming/index.js AM 分支被丢弃，暂停后仍可能继续并改写 done；downloadTrackWithTags 忽略 destPath/groupDir/skipExisting/fileNameFmt 并直接写最终文件（am/index.js:175-208）；`aac128` 未定义且 pickVariant 回退 ALAC/最高码率，仍按 AAC128 标注（downloader.js:205-230）；整曲 parts/Buffer.concat/tag/remux 多份驻留内存，封面网络异常可阻断成品。说明书须继续明确实验性，不宣传为稳定批量下载。
 - **playlist 缓存**：downloader.js `playlistCache`（5min TTL）+ `am:prefetch` IPC，切歌预取下一首。
 - **进度卡**：渲染层 CSP（index.html `connect-src 'self'`）**禁页面直连 127.0.0.1 服务**，进度查询必须走 `am:progress` IPC 读主进程内存（am-amusic.js loadCardShow）。两阶段闩锁防「切歌秒跳加载成功」：先观察到 playing 被引擎 loading 拉低才武装，重新为真才算出声。
 
@@ -479,5 +511,29 @@
 - **已装版与 dev 共用 appId（annie-player-svlx）→ 单实例锁**：已装版运行时 `npm start`，dev 实例静默 exit 0（无报错），用户看到的始终是已装版窗口。
 - **判明实例来源**：诊断包/截图先核对 info.json 的 enginePath——已装版 = `E:\AnniePlayerSVLX\resources\engine\`，dev = `工作目录\engine\publish\`。
 - **规矩**：dev 回归前先 `Get-Process AnniePlayerSVLX` 杀掉已装版；npm start 后终端仍在 Running 才算 dev 真起来了。
+
+## 十五、云端发版排障（V4.6.1，2026-10-27 实锤）✅
+- **bsdtar 对 zip 目录条目的警告退出码要容忍**：`setup-wrapper.js` 用 `tar -xf` 解 wrapper-lite.zip（Windows 自带 bsdtar）。新版 GitHub runner（windows-latest 镜像更新）的 bsdtar 对 zip 里 2 个目录条目从「静默跳过」变为「警告 `empty or unreadable filename` + 非零退出码」，但 **212 个实体文件照常全部解出**。旧脚本 `execFileSync` 把非零退出当失败直接 exit 1。修复：catch 退出码仅 warn，以 verifyDir 落盘校验（关键文件 + ≥180 文件 + ≥260MB）为最终判据。✅本地实测 tar exit=0 解出 212 文件。
+- **`gh run rerun` 不含新 commit**：workflow 失败后修复代码再 `gh run rerun <id>`，跑的还是**当时触发的旧 commit**，修复不生效。修复后必须 `git tag -f vX.Y.Z && git push -f origin vX.Y.Z` 移动 tag 重新触发全新 run（Release 未发布成功前移动 tag 安全）。
+- **ffmpeg 下载源偶发 503**（gyan.dev）：release.yml 的 `setup-tools.js` 下载 ffmpeg 遇外部服务 503，直接 rerun 自愈，无需改代码。
+
+## 十六、洛雪式下载链路（V4.6.3，仅国内流媒体；am/qobuz 不动）✅ 传输层 13/13 测试通过
+- **锁档不降级**：`songUrl({…, lockType:true})`（lxsdk.js:275-279）把 candidates 截到只剩所选档；下载路径（streaming/index.js `download()` :159）恒传 lockType。播放路径不传，V4.6.2 行为（所选档保留+降级档按 meta.types 过滤）不变。
+- **断点续传**：半成品写 `<目标>.part`，完成才 rename 成正式名（跳过设置 `skipExisting` 只看正式名）；续下带 `Range: bytes=<.part尺寸>-`（index.js:198-201）；服务器忽略 Range 回 200 或 416 → 删 .part 从头下（:219-225）；`onDest` 回调把既定目标路径回写 dlManager 任务（t.filePath），续传任务以 `destPath` 入参跳过撞名逻辑续同一文件（:166/173）。
+- **链接过期刷新**：401/403/410 → 重新走完整 `songUrl` 取址（同档锁，身份/格式校验照常）后 Range 续传，上限 3 次（index.js:210-218）。网络/传输错误重试 ≤3 次、间隔 1s。
+- **暂停/断线保留半成品**：abort 抛 AbortError 但不删 .part（index.js:242-247）；dlManager `start`/`resume` 不再清零 received/total（进度条续显）；`remove` 只清 .part 不动成品（dlManager.js remove）。
+- **去重键 provider+songId+quality**（dlManager.js:57-60）：同曲可下多个音质（洛雪同款）。
+- **下载音质弹窗**（am-stream.js `pickDlQuality` :659-697）：单曲按 `song.meta.types` 出按钮（带文件大小，洛雪 DownloadModal 同款）；复用共享弹层 `R.pop`（规范第 2 条）。接入 3 个单曲入口：搜索行 ⬇ / 右键下载 / 在线歌单行 ⬇（在线歌单行原来走 legacy `downloadSong` 直链路径，已统一到队列）。`downloadSong` 仅剩迷你模式 `AM.downloadStreamSong` 复用，未删。
+- **多选/批量下载·电狗策略**（am-stream.js `bestDlType` :703-711）：✅已验证接口前提——搜索/专辑详情（kw/album.js）/歌单详情（tx/songList.js 等）均返回每首歌真实音质映射（types）。不弹统一档，每首按 `meta.types` 取各自最高（上限 flac24bit），无清单回退 `S.stQuality`（锁档失败即任务报错，可手动重试）。接入「⬇ 下载选中」「⬇ 下载已加载」两个批量入口。
+- **罗马音/逐字歌词（V4.6.3 洛雪同款）**：`lxsdk.lyric` 本就返回 `{lrc, tlyric, rlyric, lxlyric}` 四轨，此前下载只用了两轨。现 `tagWriter.buildLyrics`（tagWriter.js:181-235）统一组装：译文/罗马音并入前做**时间轴对齐过滤**（`_filterExtended`，只留时间戳与原文匹配的行，多时间戳行部分保留；洛雪 lrcTool 同款策略，比此前 raw 追加更正确）；逐字歌词不混入文本，打包 `[awlrc:lrc:b64,tlrc:b64,rlrc:b64,awlrc:b64]` 扩展标签（awlrc 键=逐字本体，洛雪格式）。四个开关 embedRLrc/embedLxLrc/lrcRLrc/lrcLxLrc 默认全关（洛雪默认）。
+- **自动换源下载（V4.6.3 洛雪 isUseOtherSource 同款）**：`streaming.findOtherSource`（index.js:348-378）逐平台搜索（排除当前平台），匹配规则=歌名归一化严格相等 +（歌手互相包含 或 时长差≤3s）；dlManager `start()` 原平台失败后调用，命中则**删旧 .part（内容不同源不可续）+ 清 filePath（新源 ext 可能不同）+ 进度归零**后以同锁定音质重下，成功 note「原平台失败，已从 X 换源下载」。仅国内五平台，设置项 `allowOtherSource` 默认开。
+- **加密容器双防线（V4.6.3，用户实测批量下载漏网）**：① `verifyUrlFormat` 加密扩展名黑名单（lxsdk.js:159-165 `ENCRYPTED_EXT`：mflac/mgg/qmc*/tm*/ncm/kgm*/vpr，任何档位判 false）——mflac 扩展名带 flac 字样曾骗过原校验；② 下载完成**魔数嗅探** `sniffMagicOk`（index.js:150-171，rename 前校验 fLaC/ID3/ftyp 等容器头，不符删 .part 抛错「容器格式不符」）→ 任务层换源兜底。加密流是音源后端**间歇性**返回（同歌重试可拿到正常流），与批量/单独下载无关。
+- **测试**：`%TEMP%/dl-resume-test.js`（纯 Node，require 缓存劫持 lxsdk/tagWriter/sources 打桩 + 本地 HTTP 服务器）覆盖完整下载/Range 续传/403 重取址续传/暂停留半成品续完/魔数嗅探/加密扩展名黑名单，24/24 PASS。局限： Abort 用例需服务器限速（64KB/20ms）才能稳定落在传输中途。`%TEMP%/dl-lyrics-switch-test.js` 覆盖歌词组装+换源匹配，15/15 PASS。
+- ⚠️ **已知边界**：`dlClear` 全清时运行中任务的 .part 可能因写流未关删不掉（Windows 文件锁），遗留孤儿 .part 需手动清；迷你模式 ⬇ 直链下载（`stream:download` IPC）现在也锁档（download() 恒 lockType），失败即报错 toast，无降级。
+
+## 十七、XMOS ASIO 第二实例探活误判（DIAG-20261029-2243 红叶抄实锤）✅已诊断，未改代码
+- **现象链**：V4.6.4 用户 XMOS USB Audio 2.0 ST 3059 在 22:42:46.968 以 float32/44.1kHz 成功 Init，22:42:48.975 首轮 2 秒探活报 `No device is connected to the PC`，22:42:49.077 自动暂停并切 MOONDROP。导出时（24 秒后）devices.json 仍同时枚举 XMOS WASAPI 活动端点与 ASIO 驱动，故高置信度为误判而非真拔出；engineAlive=true、restartCount=0，主/渲染错误日志空。
+- **代码根因**：`Outputs.cs:785-829` 播放中每 2 秒在 STA 上额外 `new AsioOut(_driverName)` 探活；当前播放器已独占该驱动，XMOS 对第二实例也返回 not connected。`reallyGone` 仅按错误文本判断（:821-824），把第二实例独占冲突误当物理拔出。此前「ASE_NotPresent=独占、not connected=真拔出」只是另一驱动个案，不能泛化到 XMOS。
+- **后续修复约束**：不能再用单次第二实例错误文本独立判拔出；至少结合 WASAPI 活动端点消失/当前播放实例真实失败等第二信号。保留 `Engine.Playback.cs:772-786` 自动回退与断点续播，只收窄故障判据。用户临时绕法=改用 XMOS WASAPI。结论存档 `diagnostic_conclusion/DIAG-20261029-2243_红叶抄(79152)_ASIO探活误判拔出.txt`。
 
 > **维护提醒**：每次阅览代码发现新事实，顺手追加到对应分区；分区不够用就新加。「🔍待验证」项落实后改「✅」并补行号。本文件随仓库走 git，别提交到杂物目录。
